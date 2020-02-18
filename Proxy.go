@@ -7,27 +7,27 @@ import (
 	"log"
 	"net"
 	"net/url"
+	"os"
 	"strings"
 )
 
 const (
 	DefaultPort  = ":7080"
 	TCP = "tcp"
-	UDP = "udp"
 )
 
 func main()  {
 	In, err := net.Listen(TCP, DefaultPort)
 	if err != nil {
-		log.Printf("listenning network: %v\n", err)
-		return
+		log.Printf("listen failed: %v\n", err)
+		os.Exit(1)
 	}
 
 	for  {
 		conn, err := In.Accept()
 		if err != nil {
-			log.Printf("distributing connection: %v\n", err)
-			return
+			log.Printf("connect failed: %v\n", err)
+			continue
 		}
 		go connHandler(conn)
 	}
@@ -39,47 +39,51 @@ func connHandler(conn net.Conn)  {
 	}
 	defer conn.Close()
 
-	var info [1024]byte
-	_, err := conn.Read(info[:])
+	var info [4096]byte
+	n, err := conn.Read(info[:])
 	if err != nil {
-		log.Printf("Reading conn: %v\n", err)
+		log.Printf("read failed: : %v\n", err)
 		return
 	}
 
-	//fmt.Println(string(info[:n]))
-	var method, host, address string
-	fmt.Println("【ATTENTION】" + string(info[:bytes.IndexByte(info[:], '\r')]))
-	_, err = fmt.Sscanf(string(info[:bytes.IndexByte(info[:], '\r')]), "%s%s", &method, &host)
-	hostPortUrl, err := url.Parse(host)
+	var method, rawURL, address string
+	_, err = fmt.Sscanf(string(info[:bytes.IndexByte(info[:], '\r')]), "%s%s", &method, &rawURL)
+	URI, err := url.Parse(rawURL)
 	if err != nil {
-		log.Printf("Parsing URI: %v\n", err)
+		log.Printf("parse failed: %v\n", err)
 		return
 	}
 
-	fmt.Println(host + " URI:" + hostPortUrl.String() + " Host:" + hostPortUrl.Host + " Scheme:" + hostPortUrl.Scheme + " Opaque:" + hostPortUrl.Opaque)
-	if hostPortUrl.Opaque == "443" {
-		address = hostPortUrl.String()
+	fmt.Println("rawURL:" + rawURL + " URI:" + URI.String() + " Host:" + URI.Host + " Scheme:" + URI.Scheme + " Opaque:" + URI.Opaque)
+	if URI.Opaque == "443" {
+		address = URI.String()
 	} else {
-		if strings.Index(hostPortUrl.Host, ":") == -1 {
-			address = hostPortUrl.Host + ":80"  // default port is 80
+		if strings.Index(URI.Host, ":") == -1 {
+			address = URI.Host + ":80"  // default port is 80
 		} else {
-			address = hostPortUrl.Host
+			address = URI.Host
 		}
 	}
 
 	var server net.Conn
-	server, err = net.Dial("tcp", address)
+	server, err = net.Dial(TCP, address)
 	if err != nil {
-		log.Printf("Dialing: %v\n", err)
+		log.Printf("dial failed: : %v\n", err)
+		_, _ = fmt.Fprint(conn, "HTTP/1.1 404 Not Found\r\n\r\n")
 		return
 	}
 
 	if method == "CONNECT" {
-		_, _ = fmt.Fprint(conn, "HTTP /1.1 200 Connection established\r\n\r\n")
+		_, _ = fmt.Fprint(conn, "HTTP/1.1 200 Connection established\r\n\r\n")
+		go io.Copy(server, conn)
+	} else {
+		go func() {
+			_, err := server.Write(info[:n])
+			if err != nil {
+				log.Printf("write failed: %v\n", err)
+			}
+		}()
 	}
 
-
-	go io.Copy(server, conn)
 	io.Copy(conn, server)
 }
-
