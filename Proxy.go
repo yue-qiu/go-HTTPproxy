@@ -60,14 +60,10 @@ func connHandler(conn net.Conn)  {
 			_ = server.SetDeadline(time.Now().Add(3 * time.Second))
 			if req.Method == "CONNECT" {
 				_, _ = fmt.Fprint(conn, "HTTP/1.1 200 Connection established\r\n\r\n")
-				fmt.Println("begin copy")
 				go io.Copy(server, conn)
-				fmt.Println("finish copy")
 			} else {
 				go func() {
-					fmt.Println("begin writing")
 					_, err := server.Write(req.Info)
-					fmt.Println("finish writing")
 					if err != nil {
 						log.Printf("write failed: %v\n", err)
 					}
