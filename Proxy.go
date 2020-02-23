@@ -46,28 +46,38 @@ func connHandler(conn net.Conn)  {
 	var server net.Conn
 	var deadline = time.Now().Add(30 * time.Second)
 
-	for tries := 0; time.Now().Before(deadline); tries++ {
-		server, err = net.Dial(TCP, req.Addr)
-		if err == nil {
+	for {
+		for tries := 0; time.Now().Before(deadline); tries++ {
+			server, err = net.Dial(TCP, req.Addr)
+			if err == nil {
+				break
+			} else {
+				log.Printf("dial failed: %v, retrying...", err)
+				time.Sleep(time.Second << uint(tries))
+			}
+		}
+		if time.Now().Before(deadline) {
+			_ = server.SetDeadline(time.Now().Add(3 * time.Second))
 			if req.Method == "CONNECT" {
 				_, _ = fmt.Fprint(conn, "HTTP/1.1 200 Connection established\r\n\r\n")
+				fmt.Println("begin copy")
 				go io.Copy(server, conn)
+				fmt.Println("finish copy")
 			} else {
 				go func() {
+					fmt.Println("begin writing")
 					_, err := server.Write(req.Info)
+					fmt.Println("finish writing")
 					if err != nil {
 						log.Printf("write failed: %v\n", err)
 					}
 				}()
 			}
-			io.Copy(conn, server)
-			return
 		} else {
-			log.Printf("dial failed: %v, retrying...", err)
-			time.Sleep(time.Second << uint(tries))
+			log.Printf("server %v not responding", req.Addr)
+			return
 		}
+		break
 	}
-
-	_, _ = fmt.Fprintf(conn, "HTTP/1.1 404 NOT FOUND\r\n\r\n")
-	log.Printf("server %v not responding", req.Addr)
+	io.Copy(conn, server)
 }
