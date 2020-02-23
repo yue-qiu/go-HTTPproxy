@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
+	"github.com/yue-qiu/go-HttpProxy/Adapter"
 	"io"
 	"log"
 	"net"
-	"net/url"
 	"os"
-	"strings"
 	"time"
 )
 
@@ -40,44 +38,23 @@ func connHandler(conn net.Conn)  {
 	}
 	defer conn.Close()
 
-	var info [4096]byte
-	n, err := conn.Read(info[:])
+	var req, err = Adapter.NewRequest(conn)
 	if err != nil {
-		log.Printf("read failed: : %v\n", err)
 		return
-	}
-
-	var method, rawURL, address string
-	_, err = fmt.Sscanf(string(info[:bytes.IndexByte(info[:], '\r')]), "%s%s", &method, &rawURL)
-	URI, err := url.Parse(rawURL)
-	if err != nil {
-		log.Printf("parse failed: %v\n", err)
-		return
-	}
-
-	fmt.Println("rawURL:" + rawURL + " URI:" + URI.String() + " Host:" + URI.Host + " Scheme:" + URI.Scheme + " Opaque:" + URI.Opaque)
-	if URI.Opaque == "443" {
-		address = URI.String()
-	} else {
-		if strings.Index(URI.Host, ":") == -1 {
-			address = URI.Host + ":80"  // default port is 80
-		} else {
-			address = URI.Host
-		}
 	}
 
 	var server net.Conn
 	var deadline = time.Now().Add(30 * time.Second)
 
 	for tries := 0; time.Now().Before(deadline); tries++ {
-		server, err = net.Dial(TCP, address)
+		server, err = net.Dial(TCP, req.Addr)
 		if err == nil {
-			if method == "CONNECT" {
+			if req.Method == "CONNECT" {
 				_, _ = fmt.Fprint(conn, "HTTP/1.1 200 Connection established\r\n\r\n")
 				go io.Copy(server, conn)
 			} else {
 				go func() {
-					_, err := server.Write(info[:n])
+					_, err := server.Write(req.Info)
 					if err != nil {
 						log.Printf("write failed: %v\n", err)
 					}
@@ -92,5 +69,5 @@ func connHandler(conn net.Conn)  {
 	}
 
 	_, _ = fmt.Fprintf(conn, "HTTP/1.1 404 NOT FOUND\r\n\r\n")
-	log.Printf("server %v not responding", address)
+	log.Printf("server %v not responding", req.Addr)
 }

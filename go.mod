@@ -1,3 +1,3 @@
-module GoHttpProxy
+module github.com/yue-qiu/go-HttpProxy
 
-go 1.12
+go 1.13
